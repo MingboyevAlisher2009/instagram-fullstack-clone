@@ -6,7 +6,6 @@ import {
   register,
   removeImage,
   sendCode,
-  toggleFollowUser,
   updateImage,
   updateProfile,
 } from "../controllers/auth.controller.js";
@@ -51,8 +50,7 @@ router.put(
   updateImage
 );
 
-router.post("/toggle-follow", AuthMiddleware, toggleFollowUser);
-
 router.delete("/delete-image", AuthMiddleware, removeImage);
+
 
 export default router;

@@ -46,7 +46,7 @@ const AuthSchema = new Schema(
       default: false,
     },
   },
-  { timestamps: true } // Automatically adds `createdAt` and `updatedAt` fields
+  { timestamps: true }
 );
 
 const Auth = model("User", AuthSchema);
