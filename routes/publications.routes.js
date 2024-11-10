@@ -8,6 +8,7 @@ import {
   deleteComment,
   deletePublicatioImage,
   deletePublication,
+  getPublicationComment,
   getPublications,
   savePublication,
   uploadFile,
@@ -20,6 +21,8 @@ const router = Router();
 const upload = multer({ dest: "uploads/publications" });
 
 router.get("/get-publications", AuthMiddleware, getPublications);
+
+router.get("/comments", AuthMiddleware, getPublicationComment);
 
 router.post("/upload-file", upload.array("publication-file", 10), uploadFile);
 

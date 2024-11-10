@@ -1,5 +1,10 @@
-import Publications from "../models/publications.model.js";
+import { Comment, Publications } from "../models/publications.model.js";
 import { renameSync, mkdirSync, existsSync, unlinkSync } from "fs";
+
+const checkImage = (filePath) => {
+  const imageRegex = /\.(jpg|png|jpeg|gif|tiff|bmp|webp|ico|heif)$/i;
+  return imageRegex.test(filePath);
+};
 
 export const getPublications = async (req, res) => {
   try {
@@ -7,23 +12,19 @@ export const getPublications = async (req, res) => {
       .populate({ path: "author", select: "-password" })
       .populate({ path: "sevedPople", select: "-password" })
       .populate({ path: "likes", select: "-password" })
-      .populate({ path: "comments.sender", select: "-password" })
-      .populate({ path: "comments.answers.likes", select: "-password" })
-      .populate({ path: "comments.answers.author", select: "-password" })
       .populate({
-        path: "comments.likes",
-        select: "-password",
-      })
-      .populate({
-        path: "comments.answers",
-        populate: {
-          path: "author",
-          select: "-password",
-        },
-        populate: {
-          path: "user",
-          select: "-password",
-        },
+        path: "author",
+        select: "-password", // Ensure the author data is selected as needed
+        populate: [
+          {
+            path: "followers",
+            select: "-password -followers -following",
+          },
+          {
+            path: "following",
+            select: "-password -followers -following",
+          },
+        ],
       });
 
     res.json(data);
@@ -32,7 +33,89 @@ export const getPublications = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided" });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const getPublicationComment = async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+  const { publicationId } = req.body;
+
+  try {
+    const skip = (page - 1) * limit;
+
+    if (!publicationId) {
+      return res.status(400).json({ error: "Publication id is reqiured!" });
+    }
+
+    const comments = await Comment.find({ publicationId })
+      .populate({
+        path: "sender",
+        select: "-password",
+        populate: {
+          path: "followers",
+          select: "-password -followers -following",
+        },
+        populate: {
+          path: "following",
+          select: "-password -followers -following",
+        },
+      })
+      .populate({ path: "likes", select: "-password" })
+      .populate({
+        path: "answers",
+        populate: {
+          path: "author",
+          select: "-password",
+          populate: {
+            path: "followers",
+            select: "-password -followers -following",
+          },
+          populate: {
+            path: "following",
+            select: "-password -followers -following",
+          },
+        },
+        populate: {
+          path: "likes",
+          select: "-password",
+        },
+        populate: {
+          path: "user",
+          select: "-password",
+          populate: {
+            path: "followers",
+            select: "-password -followers -following",
+          },
+          populate: {
+            path: "following",
+            select: "-password -followers -following",
+          },
+        },
+      })
+      .skip(skip)
+      .limit(Number(limit))
+      .exec();
+
+    const totalComments = await Comment.countDocuments();
+
+    res.json({
+      success: true,
+      data: comments,
+      pagination: {
+        totalComments,
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalComments / limit),
+        limit: Number(limit),
+      },
+    });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ error: "Invalid data provided" });
+    }
+
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -62,13 +145,14 @@ export const uploadFile = (req, res) => {
           "0"
         )}-${randomNum}`;
 
-      const fileName = `${uploadDir}/photo_${formattedDate}_${file.originalname}`;
+      const fileName = `${uploadDir}/${
+        checkImage(file.originalname) ? `photo_` : "file_"
+      }${formattedDate}_${file.originalname}`;
 
       renameSync(file.path, fileName);
 
       return { url: fileName };
     });
-    console.log(fileNames);
 
     res.json(fileNames);
   } catch (error) {
@@ -76,7 +160,7 @@ export const uploadFile = (req, res) => {
       return res.status(400).json({ error: "Invalid data provided" });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -84,32 +168,52 @@ export const uploadFile = (req, res) => {
 export const addPublication = async (req, res) => {
   const { content, hideLike, isComment, location } = req.body;
   const { userId } = req;
+
   try {
-    if (!content) {
-      return res.status(400).json({ error: "Please enter blanks" });
+    if (!content || content.length === 0) {
+      return res.status(400).json({ error: "Content cannot be empty" });
     }
+
+    let errors = [];
 
     content.forEach((item) => {
       if (!existsSync(item.file)) {
-        return res.status(404).json({ error: `File not found: ${item.file}` });
+        errors.push(`File not found: ${item.file}`);
+      }
+      if (item.fileType === "video" && !item.coverPhoto) {
+        errors.push(`Cover photo is missing for video file: ${item.file}`);
+      } else if (
+        item.fileType === "video" &&
+        item.coverPhoto &&
+        !existsSync(item.coverPhoto)
+      ) {
+        errors.push(`Cover photo file not found: ${item.coverPhoto}`);
       }
     });
 
+    if (errors.length > 0) {
+      return res.status(404).json({ error: errors.join(", ") });
+    }
+
+    // Create the publication
     await Publications.create({
       author: userId,
       content,
-      hideLike: hideLike ? hideLike : true,
-      isComment: isComment ? isComment : true,
+      hideLike: hideLike !== undefined ? hideLike : true,
+      isComment: isComment !== undefined ? isComment : true,
       location,
     });
 
-    res.json({ succses: true, message: "Publication created succesfuly" });
+    return res.json({
+      success: true,
+      message: "Publication created successfully",
+    });
   } catch (error) {
     if (error.name === "ValidationError") {
       return res.status(400).json({ error: "Invalid data provided" });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -167,7 +271,7 @@ export const addPublicationContent = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided" });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -188,14 +292,13 @@ export const addComent = async (req, res) => {
       return res.status(404).json({ error: "Publication not found" });
     }
 
-    publication.comments.push({
+    await Comment.create({
+      publicationId,
       sender,
       comment,
       like: like ? like : 0,
       answers: [],
     });
-
-    await publication.save();
 
     res.json({ succses: true, message: "Your comment added succesfuly" });
   } catch (error) {
@@ -203,7 +306,7 @@ export const addComent = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided" });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -231,8 +334,9 @@ export const addLike = async (req, res) => {
       return res.status(404).json({ error: "Publication not found" });
     }
 
-    const comment = publication.comments.id(commentId);
+    const comment = await Comment.findById(commentId);
 
+    console.log(comment);
     if (!comment) {
       return res.status(404).json({ error: "Comment not found" });
     }
@@ -247,7 +351,7 @@ export const addLike = async (req, res) => {
       const likeIndex = comment.likes.indexOf(userId);
       if (likeIndex > -1) {
         comment.likes.splice(likeIndex, 1);
-        await publication.save();
+        await comment.save();
         return res.json({ success: true, message: "Your like was removed." });
       } else {
         comment.likes.push(userId);
@@ -263,7 +367,7 @@ export const addLike = async (req, res) => {
       const answerID = answer.likes.indexOf(userId);
       if (answerID > -1) {
         answer.likes.slice(answerID, 1);
-        await publication.save();
+        await comment.save();
         return res.json({ success: true, message: "Your like was removed." });
       } else {
         answer.likes.push(userId);
@@ -280,6 +384,7 @@ export const addLike = async (req, res) => {
     }
 
     await publication.save();
+    await comment.save();
 
     res.json({ success: true, message: "Your like was added successfully." });
   } catch (error) {
@@ -287,7 +392,7 @@ export const addLike = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided." });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -314,7 +419,7 @@ export const writeAnswer = async (req, res) => {
       return res.status(404).json({ error: "Publication not found." });
     }
 
-    const findComment = publication.comments.id(commentId);
+    const findComment = await Comment.findById(commentId);
 
     if (!findComment) {
       return res.status(404).json({ error: "Comment not found." });
@@ -326,7 +431,7 @@ export const writeAnswer = async (req, res) => {
       user,
     });
 
-    await publication.save();
+    await findComment.save();
 
     res.json({ success: true, message: "Your answer was added successfully." });
   } catch (error) {
@@ -334,7 +439,7 @@ export const writeAnswer = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided." });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -368,7 +473,7 @@ export const savePublication = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided." });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -399,7 +504,7 @@ export const deletePublication = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided." });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -414,16 +519,17 @@ export const deleteComment = async (req, res) => {
       return res.status(404).json({ error: "Publication not found." });
     }
 
-    const comment = publication.comments.id(commentId);
+    const comment = await Comment.findById(commentId);
 
     if (!comment) {
       return res.status(404).json({ error: "Comment not found." });
     }
 
     if (comment.sender.toString() === userId) {
-      publication.comments.pull(commentId);
+      await Comment.findByIdAndDelete(commentId);
+    } else {
+      throw new Error("Only author deleted this comment");
     }
-    await publication.save();
 
     return res.status(200).json({ message: "Comment deleted successfully." });
   } catch (error) {
@@ -431,7 +537,7 @@ export const deleteComment = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided." });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -446,7 +552,7 @@ export const deleteAnser = async (req, res) => {
       return res.status(404).json({ error: "Publication not found." });
     }
 
-    const comment = publication.comments.id(commentId);
+    const comment = await Comment.findById(commentId);
 
     if (!comment) {
       return res.status(404).json({ error: "Comment not found." });
@@ -461,7 +567,7 @@ export const deleteAnser = async (req, res) => {
     if (answer.author.toString() === userId) {
       comment.answers.pull(answerId);
     }
-    await publication.save();
+    await comment.save();
 
     return res.status(200).json({ message: "Answer deleted successfully." });
   } catch (error) {
@@ -469,7 +575,7 @@ export const deleteAnser = async (req, res) => {
       return res.status(400).json({ error: "Invalid data provided." });
     }
 
-    console.error("Profile Error:", error.message);
+    console.error("Publication Error:", error.message);
     return res.status(500).json({ error: "Internal server error." });
   }
 };

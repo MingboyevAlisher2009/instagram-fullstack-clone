@@ -2,6 +2,18 @@ import { useEffect, useState } from "react";
 import { Routes, useLocation } from "react-router-dom";
 import TopBarProgress from "react-topbar-progress-indicator";
 
+// Instagram-style progress bar configuration
+TopBarProgress.config({
+  barColors: {
+    0: "#ff9f43",
+    0.5: "#f368e0",
+    1: "#ee5253",
+  },
+
+  shadowBlur: 5,
+  barThickness: 5,
+});
+
 const CustomSwitch = ({ children }: any) => {
   const [progress, setProgress] = useState(false);
   const [prevLoc, setPrevLoc] = useState<string>("");
@@ -12,17 +24,12 @@ const CustomSwitch = ({ children }: any) => {
       setProgress(true);
       setPrevLoc(location.pathname);
     }
-  }, [location, prevLoc]);
 
-  useEffect(() => {
-    if (progress) {
-      const timeout = setTimeout(() => {
-        setProgress(false);
-      }, 500); // Progress barni 0.5 soniya davomida ko'rsatish
-
-      return () => clearTimeout(timeout);
+    if (location.pathname === prevLoc) {
+      setProgress(false);
+      setPrevLoc(location.pathname);
     }
-  }, [progress]);
+  }, [location, prevLoc]);
 
   return (
     <>

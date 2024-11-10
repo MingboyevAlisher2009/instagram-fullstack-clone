@@ -1,5 +1,61 @@
 import { model, Schema } from "mongoose";
 
+const contentSchema = new Schema({
+  file: { type: String, required: true },
+  fileType: {
+    type: String,
+    enum: ["image", "video"],
+    required: true,
+  },
+  audio: {
+    type: String,
+  },
+  label: [
+    {
+      type: Schema.ObjectId,
+      ref: "User",
+    },
+  ],
+  comment: {
+    type: String,
+  },
+  coverPhoto: {
+    type: String,
+    required: function () {
+      return this.fileType === "video";
+    },
+  },
+  isSound: {
+    type: Boolean,
+    default: true,
+  },
+});
+
+const commentSchema = new Schema({
+  publicationId: {
+    type: Schema.ObjectId,
+    required: true,
+  },
+  sender: {
+    type: Schema.ObjectId,
+    required: true,
+    ref: "User",
+  },
+  comment: {
+    type: String,
+    required: true,
+  },
+  likes: [{ type: Schema.ObjectId, ref: "User" }],
+  answers: [
+    {
+      author: { type: Schema.ObjectId, ref: "User" },
+      comment: { type: String },
+      likes: [{ type: Schema.ObjectId, ref: "User" }],
+      user: { type: Schema.ObjectId, ref: "User" },
+    },
+  ],
+});
+
 const PublicationsSchema = new Schema(
   {
     author: {
@@ -8,38 +64,7 @@ const PublicationsSchema = new Schema(
       ref: "User",
     },
     likes: [{ type: Schema.ObjectId, ref: "User" }],
-    content: [
-      {
-        file: { type: String, required: true },
-        fileType: {
-          type: String,
-          enum: ["photo", "video"],
-          required: true,
-        },
-        audio: {
-          type: String,
-        },
-        label: [
-          {
-            type: Schema.ObjectId,
-            ref: "User",
-          },
-        ],
-        comment: {
-          type: String,
-        },
-        coverPhoto: {
-          type: String,
-          required: function () {
-            return this.fileType === "video";
-          },
-        },
-        isSound: {
-          type: Boolean,
-          default: true,
-        },
-      },
-    ],
+    content: [contentSchema],
     isComment: {
       type: Boolean,
       default: true,
@@ -48,29 +73,6 @@ const PublicationsSchema = new Schema(
       type: Boolean,
       default: true,
     },
-    comments: [
-      {
-        sender: {
-          type: Schema.ObjectId,
-          required: true,
-          ref: "User",
-        },
-        comment: {
-          type: String,
-          required: true,
-        },
-        likes: [{ type: Schema.ObjectId, ref: "User" }],
-
-        answers: [
-          {
-            author: { type: Schema.ObjectId, ref: "User" },
-            comment: { type: String },
-            likes: [{ type: Schema.ObjectId, ref: "User" }],
-            user: { type: Schema.ObjectId, ref: "User" },
-          },
-        ],
-      },
-    ],
     sevedPople: [{ type: Schema.ObjectId, ref: "User" }],
     location: {
       type: String,
@@ -79,6 +81,5 @@ const PublicationsSchema = new Schema(
   { timestamps: true }
 );
 
-const Publications = model("Publications", PublicationsSchema);
-
-export default Publications;
+export const Publications = model("Publications", PublicationsSchema);
+export const Comment = model("Comment", commentSchema);

@@ -2,19 +2,19 @@ import { verifyToken } from "../utils/token.js";
 
 const AuthMiddleware = (req, res, next) => {
   try {
-    const brToken = req.headers;
+    const authorization = req.headers.authorization;
 
-    if (!brToken) {
+    if (!authorization) {
       return res.status(401).json({ error: "Authorization header is missing" });
     }
 
-    const token = brToken.authorization.split(" ")[1];
+    const accessToken = authorization.split(" ")[1];
 
-    if (!token) {
+    if (!accessToken) {
       return res.status(401).json({ error: "Token not provided" });
     }
 
-    const { userId } = verifyToken(token);
+    const { userId } = verifyToken(accessToken);
 
     if (!userId) {
       return res.status(401).json({ error: "Invalid or expired token" });
@@ -24,7 +24,9 @@ const AuthMiddleware = (req, res, next) => {
 
     next();
   } catch (error) {
-    res.status(401).json({ error: "Unauthorized: Invalid token" });
+    if (!res.headersSent) {
+      return res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
   }
 };
 
