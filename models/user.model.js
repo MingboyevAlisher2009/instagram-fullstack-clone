@@ -11,11 +11,10 @@ const AuthSchema = new Schema(
       type: String,
       required: false,
     },
-    userName: {
+    username: {
       type: String,
       unique: true,
-      sparse: true,
-      default: Date.now(),
+      required: true,
     },
     image: {
       type: String,

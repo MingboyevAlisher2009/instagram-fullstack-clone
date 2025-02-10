@@ -2,13 +2,7 @@ import { verifyToken } from "../utils/token.js";
 
 const AuthMiddleware = (req, res, next) => {
   try {
-    const authorization = req.headers.authorization;
-
-    if (!authorization) {
-      return res.status(401).json({ error: "Authorization header is missing" });
-    }
-
-    const accessToken = authorization.split(" ")[1];
+    const accessToken = req.cookies.jwt;
 
     if (!accessToken) {
       return res.status(401).json({ error: "Token not provided" });

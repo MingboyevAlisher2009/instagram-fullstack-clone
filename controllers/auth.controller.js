@@ -1,34 +1,8 @@
 import Auth from "../models/user.model.js";
-import { sendEmail } from "../utils/email.sevice.js";
+import { sendEmail, verify } from "../utils/email.sevice.js";
 import bcrypt from "bcrypt";
 import { generateToken } from "../utils/token.js";
 import { renameSync, unlinkSync, existsSync } from "fs";
-
-let code;
-
-const generateCode = () => Math.floor(100000 + Math.random() * 900000);
-
-export const sendCode = async (req, res) => {
-  const { email } = req.body;
-  try {
-    if (!email) {
-      return res.status(400).json({ message: "Email is required!" });
-    }
-
-    code = generateCode();
-
-    await sendEmail(email, code);
-
-    return res.json({ code, success: true });
-  } catch (error) {
-    if (error.name === "ValidationError") {
-      return res.status(400).json({ error: "Invalid data provided" });
-    }
-
-    console.error("Profile Error:", error.message);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
@@ -41,22 +15,61 @@ export const login = async (req, res) => {
     }
 
     const user = await Auth.findOne({ email });
+    console.log(user);
 
-    const compirePassword = await bcrypt.compare(password, user.password);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-    if (compirePassword) {
-      return res.status(400).json({
-        error: "Password is incorect",
-      });
+    const comparePassword = await bcrypt.compare(password, user.password);
+
+    if (!comparePassword) {
+      return res.status(400).json({ error: "Password is incorrect" });
     }
 
     if (!user) {
       return res.status(400).json({ error: "User not found" });
     }
 
-    const token = generateToken(user._id);
+    generateToken(res, user._id);
 
-    return res.json({ success: true, token });
+    return res.json({ success: true, message: "Lofin succefully" });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ error: "Invalid data provided" });
+    }
+
+    console.error(error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const register = async (req, res) => {
+  const { fullName, username, email, password } = req.body;
+  try {
+    if (!email || !username || !password) {
+      return res.status(400).json({
+        error: "Email, user name, and password are required.",
+      });
+    }
+
+    const existUser = await Auth.findOne({ email });
+
+    if (existUser) {
+      await sendEmail(existUser.email);
+      return res.status(200).json({ email: existUser.email });
+    }
+
+    const hashPassword = await bcrypt.hash(password, 10);
+
+    const user = await Auth.create({
+      email,
+      username,
+      fullName,
+      password: hashPassword,
+    });
+
+    return res.json({ success: true, message: user.email });
   } catch (error) {
     if (error.name === "ValidationError") {
       return res.status(400).json({ error: "Invalid data provided" });
@@ -67,37 +80,32 @@ export const login = async (req, res) => {
   }
 };
 
-export const register = async (req, res) => {
-  const { verificationcode, email, password } = req.body;
+export const verifyCode = async (req, res) => {
   try {
-    if (!email || !password || !verificationcode) {
-      return res.status(400).json({
-        error: "Email, verification code, and password are required.",
-      });
+    const { email, otp } = req.body;
+    const result = await verify(email, otp);
+    if (result) {
+      const user = await Auth.findOne({ email }).select("-password");
+      generateToken(res, user._id);
+      res.status(200).json({ user });
+    }
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ error: "Invalid data provided" });
     }
 
-    if (code !== verificationcode) {
-      return res
-        .status(400)
-        .json({ error: "Your verification code is incorrect" });
-    }
+    console.error("Profile Error:", error.message);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
 
-    const existingUser = await Auth.findOne({ email });
+export const getMe = async (req, res) => {
+  const userId = req.userId;
 
-    if (existingUser) {
-      return res.status(400).json({ error: "User already exists" });
-    }
+  try {
+    const user = await Auth.findById(userId).select("-password");
 
-    const hashPassword = await bcrypt.hash(password, 10);
-
-    const user = await Auth.create({
-      email,
-      password: hashPassword,
-    });
-
-    const token = generateToken(user._id);
-
-    return res.json({ success: true, token });
+    res.json(user);
   } catch (error) {
     if (error.name === "ValidationError") {
       return res.status(400).json({ error: "Invalid data provided" });
@@ -242,23 +250,6 @@ export const removeImage = async (req, res) => {
     await user.save();
 
     res.json({ message: "Profile image removed successfuly" });
-  } catch (error) {
-    if (error.name === "ValidationError") {
-      return res.status(400).json({ error: "Invalid data provided" });
-    }
-
-    console.error("Profile Error:", error.message);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-export const getMe = async (req, res) => {
-  const userId = req.userId;
-
-  try {
-    const user = await Auth.findById(userId).select("-password");
-
-    res.json(user);
   } catch (error) {
     if (error.name === "ValidationError") {
       return res.status(400).json({ error: "Invalid data provided" });

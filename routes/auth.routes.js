@@ -5,9 +5,9 @@ import {
   login,
   register,
   removeImage,
-  sendCode,
   updateImage,
   updateProfile,
+  verifyCode,
 } from "../controllers/auth.controller.js";
 import AuthMiddleware from "../middleware/auth.meddleware.js";
 import { body } from "express-validator";
@@ -17,8 +17,6 @@ const router = Router();
 const upload = multer({ dest: "uploads/profiles" });
 
 router.get("/get-me", AuthMiddleware, getMe);
-
-router.post("/send-code", sendCode);
 
 router.post(
   "/register",
@@ -33,6 +31,8 @@ router.post(
   body("password").isLength({ min: 6 }),
   login
 );
+
+router.post("/verify", verifyCode);
 
 router.put("/update-profile", AuthMiddleware, updateProfile);
 
@@ -51,6 +51,5 @@ router.put(
 );
 
 router.delete("/delete-image", AuthMiddleware, removeImage);
-
 
 export default router;

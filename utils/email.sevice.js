@@ -1,29 +1,48 @@
 import nodemailer from "nodemailer";
-import { VERIFICATION_EMAIL_TEMPLATE } from "./email-tempates.js";
+import otpModel from "../models/otp.model.js";
+import bcrypt from "bcrypt";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
   auth: {
-    user: "mingboyevalisher171@gmail.com",
-    pass: "hrky sfwo hfwt dait",
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
   },
 });
- 
-export const sendEmail = async (email, code) => {
-  try {
-    const mailOptions = {
-      from: "instagram@gmail.com",
-      to: email,
-      subject: "Your Verification Code",
-      html: VERIFICATION_EMAIL_TEMPLATE.replace("{verificationCode}", code),
-    };
 
-    const info = await transporter.sendMail(mailOptions);
+export const sendEmail = async (email) => {
+  const otp = Math.floor(100000 + Math.random() * 900000);
+  console.log("Generated OTP:", otp);
 
-    console.log("Email sent: " + info.response);
-  } catch (error) {
-    console.error("Error sending email:", error);
-    throw new Error(error);
-  }
+  const hashedOtp = await bcrypt.hash(otp.toString(), 10);
+  await otpModel.create({
+    email,
+    otp: hashedOtp,
+    expireAt: new Date(Date.now() + 5 * 60 * 1000),
+  });
+
+  await transporter.sendMail({
+    from: process.env.SMTP_USER,
+    to: email,
+    subject: `OTP for verification - ${new Date().toLocaleString()}`,
+    html: `<h1>Your OTP is: <b>${otp}</b></h1>`,
+  });
+};
+
+export const verify = async (email, otp) => {
+  const otpData = await otpModel.find({ email });
+  if (!otpData.length) throw new Error("OTP not found");
+
+  const latestOtp = otpData[otpData.length - 1];
+  if (latestOtp.expireAt < new Date()) throw new Error("OTP expired");
+
+  const isValid = await bcrypt.compare(otp.toString(), latestOtp.otp);
+  if (!isValid) throw new Error("Invalid OTP");
+
+  await otpModel.deleteMany({ email });
+  return true;
 };
